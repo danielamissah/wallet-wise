@@ -36,7 +36,13 @@ export default function TransactionForm({
   const [amount,   setAmount]   = useState(transaction?.amount   ?? "");
   const [type,     setType]     = useState<"income"|"expense">(transaction?.type ?? "expense");
   const [category, setCategory] = useState(transaction?.category ?? "");
-  const [currency, setCurrency] = useState(transaction?.currency ?? "USD");
+  const [currency, setCurrency] = useState(() => {
+    if (transaction?.currency) return transaction.currency;
+    if (typeof window !== "undefined") {
+        return localStorage.getItem("walletwise_currency") ?? "USD";
+  }
+  return "USD";
+});
   const [date,     setDate]     = useState(
     transaction?.date
       ? new Date(transaction.date).toISOString().slice(0, 10)
@@ -159,12 +165,12 @@ export default function TransactionForm({
       <div className="flex flex-col gap-1.5">
         <label className="text-sm font-medium text-gray-700">Note (optional)</label>
         <textarea
-          rows={2}
-          placeholder="Any extra details..."
-          value={note}
-          onChange={e => setNote(e.target.value)}
-          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-        />
+    rows={2}
+    placeholder="Any extra details..."
+    value={note}
+    onChange={e => setNote(e.target.value)}
+    className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-xl bg-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+/>
       </div>
 
       {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
