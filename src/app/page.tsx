@@ -1,8 +1,6 @@
 // src/app/page.tsx
-// Landing page. Clean, minimal — lets the product speak for itself.
-
 import Link from "next/link";
-import { SignedIn, SignedOut, SignInButton } from "@clerk/nextjs";
+import { SignInButton, Show, UserButton } from "@clerk/nextjs";
 
 const FEATURES = [
   { icon: "💸", label: "Track income & expenses" },
@@ -23,18 +21,21 @@ export default function HomePage() {
           <span className="text-2xl">💼</span>
           <span className="text-lg font-semibold text-gray-900">WalletWise</span>
         </div>
-        <SignedOut>
+        <Show when="signed-out">
           <SignInButton mode="modal">
             <button className="text-sm text-gray-600 hover:text-gray-900 transition font-medium">
               Sign in
             </button>
           </SignInButton>
-        </SignedOut>
-        <SignedIn>
-          <Link href="/dashboard" className="text-sm font-medium text-blue-600 hover:underline">
-            Dashboard →
-          </Link>
-        </SignedIn>
+        </Show>
+        <Show when="signed-in">
+          <div className="flex items-center gap-4">
+            <Link href="/dashboard" className="text-sm font-medium text-blue-600 hover:underline">
+              Dashboard →
+            </Link>
+            <UserButton />
+          </div>
+        </Show>
       </nav>
 
       {/* Hero */}
@@ -52,21 +53,21 @@ export default function HomePage() {
           never blow your budget again.
         </p>
 
-        <SignedOut>
+        <Show when="signed-out">
           <SignInButton mode="modal">
             <button className="bg-blue-600 text-white px-8 py-3.5 rounded-xl text-base font-semibold hover:bg-blue-700 active:scale-95 transition shadow-sm">
               Get started free →
             </button>
           </SignInButton>
-        </SignedOut>
-        <SignedIn>
+        </Show>
+        <Show when="signed-in">
           <Link
             href="/dashboard"
             className="bg-blue-600 text-white px-8 py-3.5 rounded-xl text-base font-semibold hover:bg-blue-700 active:scale-95 transition shadow-sm"
           >
             Go to dashboard →
           </Link>
-        </SignedIn>
+        </Show>
 
         {/* Feature pills */}
         <div className="flex flex-wrap justify-center gap-3 mt-12 max-w-lg">
