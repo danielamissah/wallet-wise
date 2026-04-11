@@ -1,8 +1,4 @@
 // src/components/ui/Input.tsx
-// A styled input that accepts a label and error message as props.
-// The "forwardRef" pattern lets parent components get a direct ref to the <input> element
-// — useful for form libraries and focusing inputs programmatically.
-
 import { cn } from "@/lib/utils";
 import { InputHTMLAttributes, forwardRef } from "react";
 
@@ -21,9 +17,9 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
         <input
           ref={ref}
           className={cn(
-            "w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white",
+            "w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-xl bg-white",
             "placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-            "disabled:bg-gray-50 disabled:cursor-not-allowed",
+            "disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed",
             error && "border-red-400 focus:ring-red-400",
             className
           )}
