@@ -14,6 +14,7 @@ import {
   Settings,
   Wallet,
 } from "lucide-react";
+import NotificationBell from "@/components/dashboard/NotificationBell";
 
 const NAV_ITEMS = [
   { href: "/dashboard",              icon: LayoutDashboard, label: "Overview"     },
@@ -35,6 +36,7 @@ export default function Sidebar() {
     <>
       {/* ── Desktop sidebar ── */}
       <aside className="hidden md:flex w-56 h-screen bg-white border-r border-gray-100 flex-col shrink-0">
+
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-5 py-5 border-b border-gray-100">
           <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-violet-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-500/20">
@@ -81,10 +83,13 @@ export default function Sidebar() {
           })}
         </nav>
 
-        {/* User button */}
-        <div className="px-5 py-4 border-t border-gray-100 flex items-center gap-3">
-          <UserButton afterSignOutUrl="/" />
-          <span className="text-sm text-gray-500">Account</span>
+        {/* User + notification bell */}
+        <div className="px-4 py-4 border-t border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <UserButton afterSignOutUrl="/" />
+            <span className="text-sm text-gray-500 truncate">Account</span>
+          </div>
+          <NotificationBell />
         </div>
       </aside>
 
@@ -96,7 +101,10 @@ export default function Sidebar() {
           </div>
           <span className="text-sm font-semibold text-gray-900">WalletWise</span>
         </div>
-        <UserButton afterSignOutUrl="/" />
+        <div className="flex items-center gap-2">
+          <NotificationBell />
+          <UserButton afterSignOutUrl="/" />
+        </div>
       </div>
 
       {/* ── Mobile bottom tab bar ── */}
