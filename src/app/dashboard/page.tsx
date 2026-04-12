@@ -88,7 +88,7 @@ export default function DashboardPage() {
         <p className="font-semibold text-gray-700 mb-1">{label}</p>
         {payload.map((p: any) => (
           <p key={p.name} style={{ color: p.color }}>
-            {p.name}: {toDisplay(p.value)}
+            {p.name}: {toDisplay(Number(p.value))}
           </p>
         ))}
       </div>
@@ -214,7 +214,7 @@ export default function DashboardPage() {
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(v: number) => catToDisplay(v)}
+                      formatter={(v) => catToDisplay(Number(v))}
                       contentStyle={{ borderRadius: 12, fontSize: 11, border: "1px solid #f0f0f0" }}
                     />
                   </PieChart>
@@ -271,7 +271,7 @@ export default function DashboardPage() {
                   width={55}
                 />
                 <Tooltip
-                  formatter={(v: number) => [toDisplay(v), "Spent"]}
+                  formatter={(v) => [toDisplay(Number(v)), "Spent"]}
                   contentStyle={{ borderRadius: 12, fontSize: 11, border: "1px solid #f0f0f0" }}
                 />
                 <Line
