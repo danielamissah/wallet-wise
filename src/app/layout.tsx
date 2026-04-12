@@ -1,8 +1,4 @@
 // src/app/layout.tsx
-// This is the ROOT layout — wraps every single page in the app.
-// It should ONLY contain things every page needs: ClerkProvider and global CSS.
-// The Sidebar belongs in src/app/dashboard/layout.tsx, NOT here.
-
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
@@ -17,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ClerkProvider>
+    <ClerkProvider afterSignOutUrl="/">
       <html lang="en">
         <body className={inter.className}>{children}</body>
       </html>
