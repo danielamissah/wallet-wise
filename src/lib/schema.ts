@@ -42,3 +42,15 @@ export const savingsGoals = pgTable("savings_goals", {
   completed:   boolean("completed").notNull().default(false),
   createdAt:   timestamp("created_at").defaultNow(),
 });
+
+// Reviews
+
+export const reviews = pgTable("reviews", {
+  id:        text("id").primaryKey(),
+  userId:    text("user_id").notNull(),
+  userName:  text("user_name").notNull(),
+  rating:    integer("rating").notNull(),       // 1–5
+  comment:   text("comment").notNull(),
+  approved:  boolean("approved").notNull().default(true), // auto-approve for now
+  createdAt: timestamp("created_at").defaultNow(),
+});

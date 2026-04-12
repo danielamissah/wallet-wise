@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { SignInButton, Show } from "@clerk/nextjs";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { useRef } from "react";
+import { useRef, useEffect, useState } from "react";
 import {
   Wallet, TrendingUp, Shield, Zap, Globe, Bell,
   ArrowRight, Star, ChevronDown,
@@ -155,6 +155,22 @@ export default function HomePage() {
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ["start start", "end start"] });
   const heroY   = useTransform(scrollYProgress, [0, 1], [0, 120]);
   const heroOpa = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
+  interface Review {
+  id: string;
+  userName: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+}
+
+const [realReviews, setRealReviews] = useState<Review[]>([]);
+
+useEffect(() => {
+  fetch("/api/reviews")
+    .then(r => r.json())
+    .then(data => { if (Array.isArray(data)) setRealReviews(data); })
+    .catch(() => {});
+}, []);
 
   return (
     <div className="bg-[#080b14] text-white min-h-screen overflow-x-hidden">
@@ -293,28 +309,72 @@ export default function HomePage() {
         </motion.div>
       </section>
 
-      {/* Testimonials */}
-      <section className="py-16 px-6 border-t border-white/5">
-        <motion.div variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true }} className="max-w-4xl mx-auto">
-          <motion.p variants={fadeUp} className="text-center text-white/30 text-sm mb-8 uppercase tracking-widest">What people say</motion.p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-            {[
-              { quote: "Finally a budget app that doesn't feel like a spreadsheet.", name: "Alex M.",    role: "Designer"  },
-              { quote: "The auto-categorization saves me so much time every month.",  name: "Priya K.",  role: "Engineer"  },
-              { quote: "I hit my emergency fund goal in 4 months using this.",        name: "Jordan T.", role: "Teacher"   },
-            ].map((t, i) => (
-              <motion.div key={i} variants={fadeUp} className="bg-white/[0.03] border border-white/[0.07] rounded-2xl p-5">
-                <div className="flex gap-0.5 mb-3">
-                  {[...Array(5)].map((_, j) => <Star key={j} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />)}
-                </div>
-                <p className="text-sm text-white/60 leading-relaxed mb-4">&ldquo;{t.quote}&rdquo;</p>
-                <p className="text-sm font-medium">{t.name}</p>
-                <p className="text-xs text-white/30">{t.role}</p>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-      </section>
+      {/* Testimonials — real reviews from users */}
+<section className="py-16 px-6 border-t border-white/5">
+  <motion.div
+    variants={stagger}
+    initial="hidden"
+    whileInView="show"
+    viewport={{ once: true }}
+    className="max-w-4xl mx-auto"
+  >
+    <motion.p
+      variants={fadeUp}
+      className="text-center text-white/30 text-sm mb-8 uppercase tracking-widest"
+    >
+      What users say
+    </motion.p>
+
+    {realReviews.length === 0 ? (
+      // Fallback while no reviews exist yet
+      <motion.p
+        variants={fadeUp}
+        className="text-center text-white/20 text-sm"
+      >
+        Be the first to leave a review — sign in and go to Settings.
+      </motion.p>
+    ) : (
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+        {realReviews.slice(0, 6).map((review, i) => (
+          <motion.div
+            key={review.id}
+            variants={fadeUp}
+            className="bg-white/[0.03] border border-white/[0.07] rounded-2xl p-5"
+          >
+            {/* Stars */}
+            <div className="flex gap-0.5 mb-3">
+              {[...Array(5)].map((_, j) => (
+                <Star
+                  key={j}
+                  className="w-3.5 h-3.5"
+                  fill={j < review.rating ? "#f59e0b" : "none"}
+                  stroke={j < review.rating ? "#f59e0b" : "#374151"}
+                />
+              ))}
+            </div>
+            <p className="text-sm text-white/60 leading-relaxed mb-4 line-clamp-4">
+              &ldquo;{review.comment}&rdquo;
+            </p>
+            <div className="flex items-center gap-2">
+              {/* Avatar initial */}
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center text-white text-xs font-semibold shrink-0">
+                {review.userName[0]?.toUpperCase() ?? "?"}
+              </div>
+              <div>
+                <p className="text-sm font-medium text-white/80">{review.userName}</p>
+                <p className="text-xs text-white/30">
+                  {new Date(review.createdAt).toLocaleDateString("en-US", {
+                    month: "short", year: "numeric",
+                  })}
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    )}
+  </motion.div>
+</section>
 
       {/* Final CTA */}
       <section className="py-24 px-6">

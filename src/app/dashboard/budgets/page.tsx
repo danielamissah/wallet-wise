@@ -31,7 +31,7 @@ export default function BudgetsPage() {
   const [year,       setYear]       = useState(now.getFullYear());
   const [limits,     setLimits]     = useState<BudgetLimit[]>([]);
   const [showModal,  setShowModal]  = useState(false);
-  const [editCat,    setEditCat]    = useState(CATEGORIES.filter(c => c.name !== "Income")[0].name);
+  const [editCat, setEditCat] = useState<string>(CATEGORIES.filter(c => c.name !== "Income")[0].name);
   const [limitInput, setLimitInput] = useState("");
   const [currency,   setCurrency]   = useState("USD");
   const [saving,     setSaving]     = useState(false);
