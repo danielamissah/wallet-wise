@@ -1,6 +1,9 @@
 // src/components/ui/Select.tsx
+"use client";
+
 import { cn } from "@/lib/utils";
 import { SelectHTMLAttributes, forwardRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
@@ -18,10 +21,12 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
         <select
           ref={ref}
           className={cn(
-            "w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-xl bg-white",
-            "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+            "w-full px-3 py-2 text-sm text-gray-900 border rounded-xl bg-white transition-colors",
+            "focus:outline-none focus:ring-2 focus:border-transparent",
             "disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed",
-            error && "border-red-400",
+            error
+              ? "border-red-400 focus:ring-red-400"
+              : "border-gray-200 focus:ring-blue-500",
             className
           )}
           {...props}
@@ -32,7 +37,19 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
             </option>
           ))}
         </select>
-        {error && <p className="text-xs text-red-500">{error}</p>}
+        <AnimatePresence>
+          {error && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.2 }}
+              className="text-xs text-red-500 flex items-center gap-1"
+            >
+              <span>⚠</span> {error}
+            </motion.p>
+          )}
+        </AnimatePresence>
       </div>
     );
   }

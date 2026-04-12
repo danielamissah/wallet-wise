@@ -1,10 +1,4 @@
 // src/app/api/budgets/route.ts
-//
-// GET  /api/budgets?month=4&year=2025  → get budget limits for a month
-// POST /api/budgets                    → set or update a budget limit
-//
-// A budget limit is: "I want to spend at most $300 on Food in April 2025"
-// If a limit already exists for that category+month+year, we update it (upsert).
 
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
@@ -45,7 +39,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
 
-  // Check if a limit already exists for this category + month + year
   const existing = await db
     .select()
     .from(budgetLimits)
@@ -59,7 +52,6 @@ export async function POST(req: NextRequest) {
     );
 
   if (existing.length > 0) {
-    // Update the existing limit
     await db
       .update(budgetLimits)
       .set({ limitAmount: String(limitAmount), currency: currency ?? "USD" })
@@ -67,7 +59,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ...existing[0], limitAmount: String(limitAmount) });
   }
 
-  // Otherwise insert a new one
   const newLimit = {
     id:          generateId(),
     userId,
@@ -80,4 +71,19 @@ export async function POST(req: NextRequest) {
 
   await db.insert(budgetLimits).values(newLimit);
   return NextResponse.json(newLimit, { status: 201 });
+}
+
+export async function DELETE(req: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Read the budget id from the request body
+  const { id } = await req.json();
+  if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
+  await db
+    .delete(budgetLimits)
+    .where(and(eq(budgetLimits.id, id), eq(budgetLimits.userId, userId)));
+
+  return NextResponse.json({ success: true });
 }
