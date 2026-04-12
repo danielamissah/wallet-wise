@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useGoals } from "@/hooks/useGoals";
+import { useCurrency } from "@/hooks/useCurrency";
 import type { Goal } from "@/hooks/useGoals";
 import { formatCurrency, cn, getPreferredCurrency } from "@/lib/utils";
 import { SUPPORTED_CURRENCIES } from "@/lib/currencies";
@@ -34,26 +35,43 @@ interface FormErrors {
 
 export default function GoalsPage() {
   const { goals, loading, refetch } = useGoals();
+  const { rates } = useCurrency();
 
   const [formModal,  setFormModal]  = useState<null | "add" | Goal>(null);
   const [fundsModal, setFundsModal] = useState<Goal | null>(null);
   const [form,       setForm]       = useState<GoalForm>({
-    name: "", targetAmount: "", savedAmount: "0", currency: "USD", color: GOAL_COLORS[0],
+    name: "", targetAmount: "", savedAmount: "0",
+    currency: "USD", color: GOAL_COLORS[0],
   });
   const [errors,    setErrors]    = useState<FormErrors>({});
   const [addAmount, setAddAmount] = useState("");
   const [saving,    setSaving]    = useState(false);
 
-  // Read preferred currency after mount — localStorage is client-only
+  // Preferred display currency
+  const [displayCurrency, setDisplayCurrency] = useState("USD");
   const [preferredCurrency, setPreferredCurrency] = useState("USD");
+
   useEffect(() => {
-    setPreferredCurrency(getPreferredCurrency());
+    const p = getPreferredCurrency();
+    setDisplayCurrency(p);
+    setPreferredCurrency(p);
   }, []);
+
+  // Convert any amount in a given currency to the display currency
+  function toDisplay(amount: number, fromCurrency: string): string {
+    if (fromCurrency === displayCurrency) {
+      return formatCurrency(amount, displayCurrency);
+    }
+    // fromCurrency → USD → displayCurrency
+    const toUsd        = amount / (rates[fromCurrency] ?? 1);
+    const toDisp       = toUsd * (rates[displayCurrency] ?? 1);
+    return formatCurrency(toDisp, displayCurrency);
+  }
 
   function openAdd() {
     setForm({
       name: "", targetAmount: "", savedAmount: "0",
-      currency: preferredCurrency, // ← use preferred currency
+      currency: preferredCurrency,
       color: GOAL_COLORS[0],
     });
     setErrors({});
@@ -74,45 +92,32 @@ export default function GoalsPage() {
 
   function setField<K extends keyof GoalForm>(k: K, v: GoalForm[K]) {
     setForm(f => ({ ...f, [k]: v }));
-    // Clear the error for this field as soon as the user starts typing
     if (errors[k as keyof FormErrors]) {
       setErrors(e => ({ ...e, [k]: undefined }));
     }
   }
 
-  // Validate the goal form — returns true if valid
   function validateGoalForm(): boolean {
-    const newErrors: FormErrors = {};
-
-    if (!form.name.trim()) {
-      newErrors.name = "Please enter a goal name.";
-    }
-    if (!form.targetAmount || Number(form.targetAmount) <= 0) {
-      newErrors.targetAmount = "Please enter a target amount greater than 0.";
-    }
-    if (form.savedAmount !== "" && Number(form.savedAmount) < 0) {
-      newErrors.savedAmount = "Saved amount cannot be negative.";
-    }
-    if (
-      form.targetAmount &&
-      form.savedAmount &&
-      Number(form.savedAmount) > Number(form.targetAmount)
-    ) {
-      newErrors.savedAmount = "Saved amount cannot exceed the target.";
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const e: FormErrors = {};
+    if (!form.name.trim())
+      e.name = "Please enter a goal name.";
+    if (!form.targetAmount || Number(form.targetAmount) <= 0)
+      e.targetAmount = "Please enter a target amount greater than 0.";
+    if (form.savedAmount !== "" && Number(form.savedAmount) < 0)
+      e.savedAmount = "Saved amount cannot be negative.";
+    if (form.targetAmount && form.savedAmount &&
+        Number(form.savedAmount) > Number(form.targetAmount))
+      e.savedAmount = "Saved amount cannot exceed the target.";
+    setErrors(e);
+    return Object.keys(e).length === 0;
   }
 
-  // Validate the add funds form
   function validateFundsForm(): boolean {
-    const newErrors: FormErrors = {};
-    if (!addAmount || Number(addAmount) <= 0) {
-      newErrors.addAmount = "Please enter an amount greater than 0.";
-    }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const e: FormErrors = {};
+    if (!addAmount || Number(addAmount) <= 0)
+      e.addAmount = "Please enter an amount greater than 0.";
+    setErrors(e);
+    return Object.keys(e).length === 0;
   }
 
   async function handleSave() {
@@ -142,8 +147,7 @@ export default function GoalsPage() {
   }
 
   async function handleAddFunds() {
-    if (!validateFundsForm()) return;
-    if (!fundsModal) return;
+    if (!validateFundsForm() || !fundsModal) return;
     setSaving(true);
     try {
       const newSaved  = Number(fundsModal.savedAmount) + Number(addAmount);
@@ -179,19 +183,29 @@ export default function GoalsPage() {
 
   const active    = goals.filter(g => !g.completed);
   const completed = goals.filter(g =>  g.completed);
-  const totalSaved  = goals.reduce((s, g) => s + Number(g.savedAmount),  0);
-  const totalTarget = goals.reduce((s, g) => s + Number(g.targetAmount), 0);
+
+  // Header totals — convert each goal's amounts to display currency then sum
+  const totalSaved = goals.reduce((s, g) => {
+    const rate = (rates[displayCurrency] ?? 1) / (rates[g.currency] ?? 1);
+    return s + Number(g.savedAmount) * rate;
+  }, 0);
+  const totalTarget = goals.reduce((s, g) => {
+    const rate = (rates[displayCurrency] ?? 1) / (rates[g.currency] ?? 1);
+    return s + Number(g.targetAmount) * rate;
+  }, 0);
 
   return (
     <PageTransition>
       <div className="space-y-5">
 
-        {/* Header */}
+        {/* Header — totals now in display currency */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold text-gray-900">Savings goals</h1>
             <p className="text-sm text-gray-400 mt-0.5">
-              {formatCurrency(totalSaved)} saved of {formatCurrency(totalTarget)} total
+              {formatCurrency(totalSaved, displayCurrency)} saved
+              {" "}of{" "}
+              {formatCurrency(totalTarget, displayCurrency)} total
             </p>
           </div>
           <Button onClick={openAdd} className="w-full sm:w-auto justify-center">
@@ -199,7 +213,6 @@ export default function GoalsPage() {
           </Button>
         </div>
 
-        {/* Content */}
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -212,7 +225,6 @@ export default function GoalsPage() {
           </Card>
         ) : (
           <>
-            {/* Active goals */}
             {active.length > 0 && (
               <section>
                 <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
@@ -234,23 +246,34 @@ export default function GoalsPage() {
                           whileHover={{ y: -2, transition: { duration: 0.15 } }}
                         >
                           <Card className="h-full">
+                            {/* Goal name + actions */}
                             <div className="flex items-start justify-between mb-4">
                               <div className="flex items-center gap-2 min-w-0">
-                                <div className="w-3 h-3 rounded-full shrink-0 mt-0.5" style={{ background: goal.color }} />
-                                <span className="text-sm font-semibold text-gray-800 truncate">{goal.name}</span>
+                                <div
+                                  className="w-3 h-3 rounded-full shrink-0 mt-0.5"
+                                  style={{ background: goal.color }}
+                                />
+                                <span className="text-sm font-semibold text-gray-800 truncate">
+                                  {goal.name}
+                                </span>
                               </div>
                               <div className="flex items-center gap-0.5 shrink-0 ml-2">
-                                <button onClick={() => openEdit(goal)} className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-300 hover:text-blue-500 transition-colors" title="Edit">
+                                <button onClick={() => openEdit(goal)}
+                                  className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-300 hover:text-blue-500 transition-colors">
                                   <Pencil className="w-3.5 h-3.5" />
                                 </button>
-                                <button onClick={() => toggleComplete(goal)} className="p-1.5 rounded-lg hover:bg-green-50 text-gray-300 hover:text-green-500 transition-colors" title="Mark complete">
+                                <button onClick={() => toggleComplete(goal)}
+                                  className="p-1.5 rounded-lg hover:bg-green-50 text-gray-300 hover:text-green-500 transition-colors">
                                   <CheckCircle2 className="w-3.5 h-3.5" />
                                 </button>
-                                <button onClick={() => handleDelete(goal.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors" title="Delete">
+                                <button onClick={() => handleDelete(goal.id)}
+                                  className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors">
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </div>
+
+                            {/* Amounts — show in goal's own currency */}
                             <div className="flex items-baseline justify-between mb-1">
                               <span className="text-2xl font-bold text-gray-900">
                                 {formatCurrency(saved, goal.currency)}
@@ -259,6 +282,15 @@ export default function GoalsPage() {
                                 of {formatCurrency(target, goal.currency)}
                               </span>
                             </div>
+
+                            {/* If goal currency differs from display currency, show converted */}
+                            {goal.currency !== displayCurrency && (
+                              <p className="text-xs text-gray-400 mb-1">
+                                ≈ {toDisplay(saved, goal.currency)} of {toDisplay(target, goal.currency)}
+                              </p>
+                            )}
+
+                            {/* Progress bar */}
                             <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
                               <motion.div
                                 initial={{ width: 0 }}
@@ -268,6 +300,7 @@ export default function GoalsPage() {
                                 style={{ background: goal.color }}
                               />
                             </div>
+
                             <div className="flex items-center justify-between">
                               <span className="text-xs text-gray-400">
                                 {pct.toFixed(0)}% · {formatCurrency(remaining, goal.currency)} to go
@@ -289,7 +322,6 @@ export default function GoalsPage() {
               </section>
             )}
 
-            {/* Completed goals */}
             {completed.length > 0 && (
               <section>
                 <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
@@ -305,13 +337,18 @@ export default function GoalsPage() {
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-                            <span className="text-sm font-medium text-gray-600 truncate">{goal.name}</span>
+                            <span className="text-sm font-medium text-gray-600 truncate">
+                              {goal.name}
+                            </span>
                           </div>
                           <div className="flex items-center gap-0.5 shrink-0 ml-2">
-                            <button onClick={() => toggleComplete(goal)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-300 hover:text-amber-500 transition-colors" title="Reopen">
+                            <button onClick={() => toggleComplete(goal)}
+                              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-300 hover:text-amber-500 transition-colors"
+                              title="Reopen">
                               <CheckCircle2 className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => handleDelete(goal.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors">
+                            <button onClick={() => handleDelete(goal.id)}
+                              className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -331,7 +368,7 @@ export default function GoalsPage() {
           </>
         )}
 
-        {/* ── Add / Edit goal modal ── */}
+        {/* Add / Edit modal */}
         <Modal
           open={formModal !== null}
           onClose={() => setFormModal(null)}
@@ -345,23 +382,17 @@ export default function GoalsPage() {
               onChange={e => setField("name", e.target.value)}
               error={errors.name}
             />
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Input
                 label="Target amount *"
-                type="number"
-                min="1"
-                step="0.01"
-                placeholder="1000"
+                type="number" min="1" step="0.01" placeholder="1000"
                 value={form.targetAmount}
                 onChange={e => setField("targetAmount", e.target.value)}
                 error={errors.targetAmount}
               />
               <Input
                 label="Saved so far"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0"
+                type="number" min="0" step="0.01" placeholder="0"
                 value={form.savedAmount}
                 onChange={e => setField("savedAmount", e.target.value)}
                 error={errors.savedAmount}
@@ -404,7 +435,7 @@ export default function GoalsPage() {
           </div>
         </Modal>
 
-        {/* ── Add funds modal ── */}
+        {/* Add funds modal */}
         <Modal
           open={fundsModal !== null}
           onClose={() => { setFundsModal(null); setErrors({}); }}
@@ -414,17 +445,19 @@ export default function GoalsPage() {
             <div className="bg-gray-50 rounded-xl p-4 text-center">
               <p className="text-xs text-gray-400 mb-1">Current progress</p>
               <p className="text-2xl font-bold text-gray-900">
-                {formatCurrency(Number(fundsModal?.savedAmount), fundsModal?.currency)}
+                {formatCurrency(Number(fundsModal?.savedAmount), fundsModal?.currency ?? displayCurrency)}
               </p>
               <p className="text-xs text-gray-400">
-                of {formatCurrency(Number(fundsModal?.targetAmount), fundsModal?.currency)}
+                of {formatCurrency(Number(fundsModal?.targetAmount), fundsModal?.currency ?? displayCurrency)}
               </p>
               {fundsModal && (
                 <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{
-                      width: `${Math.min(100, (Number(fundsModal.savedAmount) / Number(fundsModal.targetAmount)) * 100)}%`,
+                      width: `${Math.min(100,
+                        (Number(fundsModal.savedAmount) / Number(fundsModal.targetAmount)) * 100
+                      )}%`,
                     }}
                     transition={{ duration: 0.6 }}
                     className="h-full rounded-full"
@@ -434,11 +467,8 @@ export default function GoalsPage() {
               )}
             </div>
             <Input
-              label="Amount to add *"
-              type="number"
-              min="0.01"
-              step="0.01"
-              placeholder="50.00"
+              label={`Amount to add (${fundsModal?.currency ?? displayCurrency}) *`}
+              type="number" min="0.01" step="0.01" placeholder="50.00"
               value={addAmount}
               onChange={e => {
                 setAddAmount(e.target.value);

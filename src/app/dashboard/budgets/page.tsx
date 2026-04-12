@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useTransactions } from "@/hooks/useTransactions";
+import { useCurrency } from "@/hooks/useCurrency";
 import { CATEGORIES, getCategoryColor, getCategoryIcon } from "@/lib/categories";
 import { formatCurrency, MONTHS, cn, getPreferredCurrency } from "@/lib/utils";
 import { SUPPORTED_CURRENCIES } from "@/lib/currencies";
@@ -36,7 +37,33 @@ export default function BudgetsPage() {
   const [saving,     setSaving]     = useState(false);
   const [deleting,   setDeleting]   = useState<string | null>(null);
 
-  // Read preferred currency once on mount — localStorage is client-only
+  // Preferred display currency
+  const [displayCurrency, setDisplayCurrency] = useState("USD");
+  const { rates } = useCurrency();
+
+  useEffect(() => {
+    const preferred = getPreferredCurrency();
+    setDisplayCurrency(preferred);
+  }, []);
+
+  // Convert any USD amount to the display currency
+  function toDisplay(usdAmount: number): string {
+    const rate = rates[displayCurrency] ?? 1;
+    return formatCurrency(usdAmount * rate, displayCurrency);
+  }
+
+  // Convert a limit amount that may be in its own currency to display currency
+  function limitToDisplay(amount: number, limitCurrency: string): string {
+    if (limitCurrency === displayCurrency) {
+      return formatCurrency(amount, displayCurrency);
+    }
+    // Convert limitCurrency → USD → displayCurrency
+    const toUsdRate      = rates[limitCurrency] ?? 1;
+    const amountInUsd    = amount / toUsdRate;
+    const toDisplayRate  = rates[displayCurrency] ?? 1;
+    return formatCurrency(amountInUsd * toDisplayRate, displayCurrency);
+  }
+
   const [preferredCurrency, setPreferredCurrency] = useState("USD");
   useEffect(() => {
     setPreferredCurrency(getPreferredCurrency());
@@ -60,9 +87,6 @@ export default function BudgetsPage() {
     else setMonth(m => m + 1);
   }
 
-  // When opening the modal:
-  // - If the category already has a limit → pre-fill with its saved values
-  // - If it's a new limit → use the user's preferred currency, empty amount
   function openModal(cat: string) {
     const existing = limits.find(l => l.category === cat);
     setEditCat(cat);
@@ -71,7 +95,7 @@ export default function BudgetsPage() {
       setCurrency(existing.currency);
     } else {
       setLimitInput("");
-      setCurrency(preferredCurrency); // ← use preferred, not hardcoded "USD"
+      setCurrency(preferredCurrency);
     }
     setShowModal(true);
   }
@@ -86,7 +110,7 @@ export default function BudgetsPage() {
         body:    JSON.stringify({
           category:    editCat,
           limitAmount: Number(limitInput),
-          currency,    // sends whatever the user selected in the modal
+          currency,
           month,
           year,
         }),
@@ -117,6 +141,7 @@ export default function BudgetsPage() {
     }
   }
 
+  // Sum spending per category — amountUsd is already in USD
   const spendingByCategory: Record<string, number> = {};
   transactions.forEach(tx => {
     spendingByCategory[tx.category] =
@@ -142,26 +167,17 @@ export default function BudgetsPage() {
           </div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-xl px-1 self-start sm:self-auto">
-              <button
-                onClick={prevMonth}
-                className="p-1.5 hover:bg-gray-50 rounded-lg transition-colors"
-              >
+              <button onClick={prevMonth} className="p-1.5 hover:bg-gray-50 rounded-lg transition-colors">
                 <ChevronLeft className="w-4 h-4 text-gray-500" />
               </button>
               <span className="text-sm font-semibold text-gray-800 px-2 min-w-[110px] text-center">
                 {MONTHS[month - 1]} {year}
               </span>
-              <button
-                onClick={nextMonth}
-                className="p-1.5 hover:bg-gray-50 rounded-lg transition-colors"
-              >
+              <button onClick={nextMonth} className="p-1.5 hover:bg-gray-50 rounded-lg transition-colors">
                 <ChevronRight className="w-4 h-4 text-gray-500" />
               </button>
             </div>
-            <Button
-              onClick={() => openModal(expenseCategories[0].name)}
-              className="justify-center"
-            >
+            <Button onClick={() => openModal(expenseCategories[0].name)} className="justify-center">
               <Plus className="w-4 h-4" /> Set budget
             </Button>
           </div>
@@ -179,12 +195,20 @@ export default function BudgetsPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {displayCategories.map((cat, i) => {
-              const limit  = limits.find(l => l.category === cat.name);
-              const spent  = spendingByCategory[cat.name] ?? 0;
-              const cap    = limit ? Number(limit.limitAmount) : null;
-              const pct    = cap ? Math.min(100, (spent / cap) * 100) : null;
-              const isOver = cap !== null && spent > cap;
-              const isWarn = cap !== null && pct !== null && pct >= 80 && !isOver;
+              const limit = limits.find(l => l.category === cat.name);
+
+              // spentUsd is in USD (from amountUsd column)
+              const spentUsd = spendingByCategory[cat.name] ?? 0;
+
+              // Cap is stored in whatever currency the user set —
+              // convert it to USD for percentage comparison
+              const capUsd = limit
+                ? Number(limit.limitAmount) / (rates[limit.currency] ?? 1)
+                : null;
+
+              const pct    = capUsd ? Math.min(100, (spentUsd / capUsd) * 100) : null;
+              const isOver = capUsd !== null && spentUsd > capUsd;
+              const isWarn = capUsd !== null && pct !== null && pct >= 80 && !isOver;
 
               return (
                 <motion.div
@@ -212,7 +236,6 @@ export default function BudgetsPage() {
                           {cat.name}
                         </span>
                       </div>
-
                       <div className="flex items-center gap-1 shrink-0">
                         {isOver && <AlertTriangle className="w-4 h-4 text-red-500 mr-1" />}
                         {isWarn && <AlertTriangle className="w-4 h-4 text-amber-500 mr-1" />}
@@ -239,17 +262,17 @@ export default function BudgetsPage() {
                       </div>
                     </div>
 
-                    {/* Spent vs limit */}
+                    {/* Spent vs limit — BOTH in display currency */}
                     <div className="flex items-baseline justify-between mb-2">
                       <span className={cn(
                         "text-xl font-bold",
                         isOver ? "text-red-600" : "text-gray-900"
                       )}>
-                        {formatCurrency(spent)}
+                        {toDisplay(spentUsd)}
                       </span>
-                      {cap !== null
+                      {limit
                         ? <span className="text-xs text-gray-400">
-                            of {formatCurrency(cap, limit?.currency ?? "USD")} limit
+                            of {limitToDisplay(Number(limit.limitAmount), limit.currency)} limit
                           </span>
                         : <button
                             onClick={() => openModal(cat.name)}
@@ -261,7 +284,7 @@ export default function BudgetsPage() {
                     </div>
 
                     {/* Progress bar */}
-                    {cap !== null && pct !== null && (
+                    {capUsd !== null && pct !== null && (
                       <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                         <motion.div
                           initial={{ width: 0 }}
@@ -275,9 +298,9 @@ export default function BudgetsPage() {
                       </div>
                     )}
 
-                    {isOver && (
+                    {isOver && capUsd !== null && (
                       <p className="text-xs text-red-500 mt-2 font-medium">
-                        Over by {formatCurrency(spent - cap!)}
+                        Over by {toDisplay(spentUsd - capUsd)}
                       </p>
                     )}
                     {isWarn && (
@@ -285,7 +308,7 @@ export default function BudgetsPage() {
                         {(100 - pct!).toFixed(0)}% of budget remaining
                       </p>
                     )}
-                    {!isOver && !isWarn && cap !== null && pct !== null && (
+                    {!isOver && !isWarn && capUsd !== null && pct !== null && (
                       <p className="text-xs text-gray-400 mt-2">
                         {(100 - pct).toFixed(0)}% remaining
                       </p>
@@ -298,11 +321,7 @@ export default function BudgetsPage() {
         )}
 
         {/* Modal */}
-        <Modal
-          open={showModal}
-          onClose={() => setShowModal(false)}
-          title="Set budget limit"
-        >
+        <Modal open={showModal} onClose={() => setShowModal(false)} title="Set budget limit">
           <div className="space-y-4">
             <Select
               label="Category"
@@ -310,8 +329,6 @@ export default function BudgetsPage() {
               onChange={e => {
                 const cat = e.target.value;
                 setEditCat(cat);
-                // When switching category inside the modal, update currency + amount
-                // to match that category's existing limit, or fall back to preferred
                 const existing = limits.find(l => l.category === cat);
                 if (existing) {
                   setLimitInput(existing.limitAmount);
@@ -336,7 +353,6 @@ export default function BudgetsPage() {
                 value={limitInput}
                 onChange={e => setLimitInput(e.target.value)}
               />
-              {/* Currency select — fully controlled, value is `currency` state */}
               <Select
                 label="Currency"
                 value={currency}
@@ -348,14 +364,10 @@ export default function BudgetsPage() {
               />
             </div>
             <p className="text-xs text-gray-400">
-              You&apos;ll see a warning when spending reaches 80% of this limit.
+              Warning shows at 80% of limit.
             </p>
             <div className="flex gap-3">
-              <Button
-                variant="secondary"
-                onClick={() => setShowModal(false)}
-                className="flex-1"
-              >
+              <Button variant="secondary" onClick={() => setShowModal(false)} className="flex-1">
                 Cancel
               </Button>
               <Button onClick={handleSave} loading={saving} className="flex-1">
