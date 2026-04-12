@@ -86,7 +86,7 @@ export default function Sidebar() {
         {/* User + notification bell */}
         <div className="px-4 py-4 border-t border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <UserButton afterSignOutUrl="/" />
+            <UserButton />
             <span className="text-sm text-gray-500 truncate">Account</span>
           </div>
           <NotificationBell />
@@ -103,7 +103,7 @@ export default function Sidebar() {
         </div>
         <div className="flex items-center gap-2">
           <NotificationBell />
-          <UserButton afterSignOutUrl="/" />
+          <UserButton />
         </div>
       </div>
 
