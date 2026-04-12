@@ -34,10 +34,12 @@ export default function DashboardPage() {
   const { transactions, refetch } = useTransactions({ month, year });
   const { rates }                 = useCurrency();
 
+  // Read preferred currency after mount
   useEffect(() => {
     setDisplayCurrency(getPreferredCurrency());
   }, []);
 
+  // Keep in sync if user changes it in Settings in the same session
   useEffect(() => {
     function onStorage(e: StorageEvent) {
       if (e.key === "walletwise_currency" && e.newValue) {
@@ -57,6 +59,7 @@ export default function DashboardPage() {
     else setMonth(m => m + 1);
   }
 
+  // Totals in USD (normalised), then converted to display currency
   const incomeUsd  = transactions.filter(t => t.type === "income").reduce((s, t)  => s + Number(t.amountUsd), 0);
   const expenseUsd = transactions.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amountUsd), 0);
   const balanceUsd = incomeUsd - expenseUsd;
@@ -67,6 +70,17 @@ export default function DashboardPage() {
     return formatCurrency(converted, displayCurrency);
   }
 
+  // Convert a USD amount to display currency for category breakdown
+  function catToDisplay(usdAmount: number): string {
+    return toDisplay(usdAmount);
+  }
+
+  const Spinner = () => (
+    <div className="flex items-center justify-center py-12">
+      <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
     return (
@@ -74,18 +88,12 @@ export default function DashboardPage() {
         <p className="font-semibold text-gray-700 mb-1">{label}</p>
         {payload.map((p: any) => (
           <p key={p.name} style={{ color: p.color }}>
-            {p.name}: {formatCurrency(p.value)}
+            {p.name}: {toDisplay(p.value)}
           </p>
         ))}
       </div>
     );
   };
-
-  const Spinner = () => (
-    <div className="flex items-center justify-center py-12">
-      <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
 
   return (
     <PageTransition>
@@ -98,15 +106,20 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-400 mt-0.5">Your financial snapshot</p>
           </div>
           <div className="flex items-center justify-between sm:justify-end gap-3">
-            {/* Month navigator */}
             <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-xl px-1">
-              <button onClick={prevMonth} className="p-1.5 hover:bg-gray-50 rounded-lg transition-colors">
+              <button
+                onClick={prevMonth}
+                className="p-1.5 hover:bg-gray-50 rounded-lg transition-colors"
+              >
                 <ChevronLeft className="w-4 h-4 text-gray-500" />
               </button>
               <span className="text-sm font-medium text-gray-700 px-1 min-w-[90px] sm:min-w-[110px] text-center">
                 {MONTHS[month - 1]} {year}
               </span>
-              <button onClick={nextMonth} className="p-1.5 hover:bg-gray-50 rounded-lg transition-colors">
+              <button
+                onClick={nextMonth}
+                className="p-1.5 hover:bg-gray-50 rounded-lg transition-colors"
+              >
                 <ChevronRight className="w-4 h-4 text-gray-500" />
               </button>
             </div>
@@ -118,7 +131,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Stat cards — 1 col on mobile, 3 on sm+ ── */}
+        {/* ── Stat cards ── */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
           <StatCard
             label="Total income"
@@ -143,13 +156,13 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* ── Charts — stacked on mobile, side by side on md+ ── */}
+        {/* ── Charts ── */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
           {/* Bar chart */}
           <Card animate delay={0.1}>
             <h2 className="text-sm font-semibold text-gray-700 mb-0.5">Income vs expenses</h2>
-            <p className="text-xs text-gray-400 mb-4">Last 6 months (USD)</p>
+            <p className="text-xs text-gray-400 mb-4">Last 6 months</p>
             {loading ? <Spinner /> : (
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={data?.monthlyTotals ?? []} barGap={4}>
@@ -163,8 +176,8 @@ export default function DashboardPage() {
                     tick={{ fontSize: 10, fill: "#9ca3af" }}
                     axisLine={false}
                     tickLine={false}
-                    tickFormatter={v => `$${v}`}
-                    width={40}
+                    tickFormatter={v => toDisplay(v)}
+                    width={55}
                   />
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey="income"  name="Income"   fill="#22c55e" radius={[4,4,0,0]} maxBarSize={24} />
@@ -191,7 +204,8 @@ export default function DashboardPage() {
                       data={data?.categoryBreakdown}
                       dataKey="total"
                       nameKey="category"
-                      cx="50%" cy="50%"
+                      cx="50%"
+                      cy="50%"
                       innerRadius={38}
                       outerRadius={60}
                     >
@@ -200,13 +214,14 @@ export default function DashboardPage() {
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(v: number) => formatCurrency(v)}
+                      formatter={(v: number) => catToDisplay(v)}
                       contentStyle={{ borderRadius: 12, fontSize: 11, border: "1px solid #f0f0f0" }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
-                {/* Legend */}
-                <div className="flex-1 space-y-1.5 min-w-0">
+
+                {/* Legend — now uses display currency */}
+                <div className="flex-1 space-y-2 min-w-0">
                   {data?.categoryBreakdown.slice(0, 5).map((entry, i) => (
                     <motion.div
                       key={entry.category}
@@ -216,14 +231,15 @@ export default function DashboardPage() {
                       className="flex items-center justify-between gap-1"
                     >
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <div
-                          className="w-2 h-2 rounded-full shrink-0"
-                          style={{ background: getCategoryColor(entry.category) }}
-                        />
-                        <span className="text-xs text-gray-600 truncate">{entry.category}</span>
+                        <span className="text-sm shrink-0">
+                          {getCategoryIcon(entry.category)}
+                        </span>
+                        <span className="text-xs text-gray-600 truncate">
+                          {entry.category}
+                        </span>
                       </div>
                       <span className="text-xs font-medium text-gray-700 shrink-0">
-                        {formatCurrency(entry.total)}
+                        {catToDisplay(entry.total)}
                       </span>
                     </motion.div>
                   ))}
@@ -233,10 +249,10 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* ── Line chart — full width ── */}
+        {/* ── Daily spending line chart ── */}
         <Card animate delay={0.2}>
           <h2 className="text-sm font-semibold text-gray-700 mb-0.5">Daily spending</h2>
-          <p className="text-xs text-gray-400 mb-4">{MONTHS[month - 1]} {year} (USD)</p>
+          <p className="text-xs text-gray-400 mb-4">{MONTHS[month - 1]} {year}</p>
           {loading ? <Spinner /> : (
             <ResponsiveContainer width="100%" height={120}>
               <LineChart data={data?.dailySpending ?? []}>
@@ -251,11 +267,11 @@ export default function DashboardPage() {
                   tick={{ fontSize: 10, fill: "#9ca3af" }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={v => `$${v}`}
-                  width={40}
+                  tickFormatter={v => toDisplay(v)}
+                  width={55}
                 />
                 <Tooltip
-                  formatter={(v: number) => formatCurrency(v)}
+                  formatter={(v: number) => [toDisplay(v), "Spent"]}
                   contentStyle={{ borderRadius: 12, fontSize: 11, border: "1px solid #f0f0f0" }}
                 />
                 <Line
@@ -271,7 +287,7 @@ export default function DashboardPage() {
           )}
         </Card>
 
-        {/* ── Bottom row — stacked on mobile, side by side on md+ ── */}
+        {/* ── Bottom row ── */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
           {/* Top expenses */}
@@ -294,7 +310,7 @@ export default function DashboardPage() {
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div
-                        className="w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0"
+                        className="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0"
                         style={{ background: getCategoryColor(tx.category) + "18" }}
                       >
                         {getCategoryIcon(tx.category)}
@@ -304,6 +320,7 @@ export default function DashboardPage() {
                         <p className="text-xs text-gray-400">{tx.category}</p>
                       </div>
                     </div>
+                    {/* Show original transaction currency */}
                     <span className="text-sm font-semibold text-red-500 shrink-0">
                       -{formatCurrency(tx.amount, tx.currency)}
                     </span>
@@ -365,7 +382,7 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* ── Modal ── */}
+        {/* ── Add transaction modal ── */}
         <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add transaction">
           <TransactionForm
             onSuccess={() => { setShowAdd(false); refetch(); }}
