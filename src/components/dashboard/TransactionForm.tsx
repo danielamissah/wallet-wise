@@ -1,96 +1,98 @@
 // src/components/dashboard/TransactionForm.tsx
-//
-// This single form handles BOTH adding a new transaction AND editing an existing one.
-// How? We pass an optional "transaction" prop.
-// - If it's undefined → we're adding (POST)
-// - If it has a value  → we're editing (PATCH)
-//
-// This pattern (one form, two modes) avoids duplicating form logic.
-
 "use client";
 
 import { useState, useEffect } from "react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
-import { CATEGORIES } from "@/lib/categories";
+import { CATEGORIES, autoCategorize } from "@/lib/categories";
 import { SUPPORTED_CURRENCIES } from "@/lib/currencies";
-import { autoCategorize } from "@/lib/categories";
 import type { Transaction } from "@/hooks/useTransactions";
 
 interface TransactionFormProps {
-  transaction?: Transaction;       // undefined = add mode, defined = edit mode
-  onSuccess: () => void;           // called after save so parent can refresh the list
+  transaction?: Transaction;
+  onSuccess: () => void;
   onCancel: () => void;
 }
 
-export default function TransactionForm({
-  transaction,
-  onSuccess,
-  onCancel,
-}: TransactionFormProps) {
+interface FormErrors {
+  name?: string;
+  amount?: string;
+  date?: string;
+  general?: string;
+}
+
+export default function TransactionForm({ transaction, onSuccess, onCancel }: TransactionFormProps) {
   const isEditing = !!transaction;
 
-  // Form state — pre-fill with existing values when editing
   const [name,     setName]     = useState(transaction?.name     ?? "");
   const [amount,   setAmount]   = useState(transaction?.amount   ?? "");
-  const [type,     setType]     = useState<"income"|"expense">(transaction?.type ?? "expense");
+  const [type,     setType]     = useState<"income" | "expense">(transaction?.type ?? "expense");
   const [category, setCategory] = useState(transaction?.category ?? "");
-  const [currency, setCurrency] = useState(() => {
-    if (transaction?.currency) return transaction.currency;
-    if (typeof window !== "undefined") {
-        return localStorage.getItem("walletwise_currency") ?? "USD";
-  }
-  return "USD";
-});
+  const [currency, setCurrency] = useState(transaction?.currency ?? "USD");
   const [date,     setDate]     = useState(
     transaction?.date
       ? new Date(transaction.date).toISOString().slice(0, 10)
       : new Date().toISOString().slice(0, 10)
   );
-  const [note,     setNote]     = useState(transaction?.note ?? "");
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState("");
+  const [note,    setNote]    = useState(transaction?.note ?? "");
+  const [errors,  setErrors]  = useState<FormErrors>({});
+  const [loading, setLoading] = useState(false);
 
-  // Auto-suggest a category as the user types the transaction name
-  // We only auto-suggest if the user hasn't manually picked a category yet
+  useEffect(() => {
+    if (!isEditing) {
+      const preferred = localStorage.getItem("walletwise_currency");
+      if (preferred) setCurrency(preferred);
+    }
+  }, [isEditing]);
+
   useEffect(() => {
     if (name && !isEditing) {
-      const suggested = autoCategorize(name);
-      setCategory(suggested);
+      setCategory(autoCategorize(name));
     }
   }, [name, isEditing]);
 
+  function validate(): boolean {
+    const e: FormErrors = {};
+    if (!name.trim())             e.name   = "Please enter a description.";
+    if (!amount || Number(amount) <= 0) e.amount = "Please enter an amount greater than 0.";
+    if (!date)                    e.date   = "Please select a date.";
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
+  function clearError(field: keyof FormErrors) {
+    if (errors[field]) setErrors(e => ({ ...e, [field]: undefined }));
+  }
+
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault(); // prevent browser page reload on form submit
-    setError("");
-
-    if (!name.trim() || !amount || !date) {
-      setError("Please fill in all required fields.");
-      return;
-    }
-
+    e.preventDefault();
+    if (!validate()) return;
     setLoading(true);
     try {
-      const payload = { name, amount: Number(amount), type, category, currency, date, note };
-
-      const res = await fetch(
-        isEditing ? `/api/transactions/${transaction!.id}` : "/api/transactions",
-        {
-          method:  isEditing ? "PATCH" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify(payload),
-        }
-      );
-
+      const payload = {
+        name:     name.trim(),
+        amount:   Number(amount),
+        type,
+        category: category || autoCategorize(name),
+        currency,
+        date,
+        note:     note.trim() || null,
+      };
+      const url    = isEditing ? `/api/transactions/${transaction!.id}` : "/api/transactions";
+      const method = isEditing ? "PATCH" : "POST";
+      const res    = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(payload),
+      });
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({ error: "Request failed" }));
         throw new Error(err.error ?? "Something went wrong");
       }
-
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save");
+      setErrors({ general: e instanceof Error ? e.message : "Failed to save. Try again." });
     } finally {
       setLoading(false);
     }
@@ -109,15 +111,13 @@ export default function TransactionForm({
             key={t}
             type="button"
             onClick={() => setType(t)}
-            className={`flex-1 py-2 text-sm font-medium capitalize transition-colors ${
+            className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
               type === t
-                ? t === "expense"
-                  ? "bg-red-500 text-white"
-                  : "bg-green-500 text-white"
+                ? t === "expense" ? "bg-red-500 text-white" : "bg-green-500 text-white"
                 : "bg-white text-gray-500 hover:bg-gray-50"
             }`}
           >
-            {t}
+            {t === "expense" ? "💸 Expense" : "💰 Income"}
           </button>
         ))}
       </div>
@@ -126,19 +126,21 @@ export default function TransactionForm({
         label="Description *"
         placeholder="e.g. Netflix, Grocery run, Salary"
         value={name}
-        onChange={e => setName(e.target.value)}
+        onChange={e => { setName(e.target.value); clearError("name"); }}
+        error={errors.name}
       />
 
-      {/* Amount + Currency side by side */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Stack on very small phones, side by side on sm+ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
           label="Amount *"
           type="number"
-          min="0"
+          min="0.01"
           step="0.01"
           placeholder="0.00"
           value={amount}
-          onChange={e => setAmount(e.target.value)}
+          onChange={e => { setAmount(e.target.value); clearError("amount"); }}
+          error={errors.amount}
         />
         <Select
           label="Currency"
@@ -159,21 +161,27 @@ export default function TransactionForm({
         label="Date *"
         type="date"
         value={date}
-        onChange={e => setDate(e.target.value)}
+        onChange={e => { setDate(e.target.value); clearError("date"); }}
+        error={errors.date}
       />
 
       <div className="flex flex-col gap-1.5">
         <label className="text-sm font-medium text-gray-700">Note (optional)</label>
         <textarea
-    rows={2}
-    placeholder="Any extra details..."
-    value={note}
-    onChange={e => setNote(e.target.value)}
-    className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-xl bg-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-/>
+          rows={2}
+          placeholder="Any extra details…"
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-200 rounded-xl bg-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+        />
       </div>
 
-      {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+      {errors.general && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-600 text-sm px-3 py-2.5 rounded-xl">
+          <span className="shrink-0">⚠️</span>
+          <span>{errors.general}</span>
+        </div>
+      )}
 
       <div className="flex gap-3 pt-1">
         <Button type="button" variant="secondary" onClick={onCancel} className="flex-1">
@@ -183,7 +191,6 @@ export default function TransactionForm({
           {isEditing ? "Save changes" : "Add transaction"}
         </Button>
       </div>
-
     </form>
   );
 }
