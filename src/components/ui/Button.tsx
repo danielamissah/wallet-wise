@@ -1,9 +1,3 @@
-// src/components/ui/Button.tsx
-//
-// A typed Button component with variants and sizes.
-// "variant" controls the visual style, "size" controls padding and font size.
-// This pattern (variants as props) is how most component libraries like shadcn work.
-
 import { cn } from "@/lib/utils";
 import { ButtonHTMLAttributes } from "react";
 
@@ -15,9 +9,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const VARIANTS = {
   primary:   "bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800",
-  secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200 active:bg-gray-300",
-  ghost:     "bg-transparent text-gray-600 hover:bg-gray-100",
-  danger:    "bg-red-50 text-red-600 hover:bg-red-100",
+  secondary: "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 active:bg-gray-300",
+  ghost:     "bg-transparent text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800",
+  danger:    "bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50",
 };
 
 const SIZES = {
