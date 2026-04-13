@@ -405,7 +405,7 @@ useEffect(() => {
       {/* Footer */}
       <footer className="border-t border-white/5 py-8 px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-white/20 text-xs max-w-6xl mx-auto">
         <div className="flex items-center gap-2"><Wallet className="w-3.5 h-3.5" /><span>WalletWise</span></div>
-        <span>© {new Date().getFullYear()} — Built with Next.js, Tailwind & ❤️</span>
+        <span>© {new Date().getFullYear()} — Built by Daniel Kwame Amissah </span>
         <span>Free forever</span>
       </footer>
     </div>
