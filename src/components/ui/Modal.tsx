@@ -1,4 +1,3 @@
-// src/components/ui/Modal.tsx
 "use client";
 
 import { useEffect } from "react";
@@ -29,13 +28,12 @@ export default function Modal({ open, onClose, title, children, className }: Mod
   return (
     <AnimatePresence>
       {open && (
-        // Full-screen overlay — flex column so modal stays in view
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm px-0 sm:px-4"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm px-0 sm:px-4"
           onClick={onClose}
         >
           <motion.div
@@ -43,26 +41,28 @@ export default function Modal({ open, onClose, title, children, className }: Mod
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 40 }}
             transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-            // On mobile: slides up from bottom, rounded top corners only
-            // On sm+: centered card with all rounded corners
             className={cn(
-              "bg-white w-full sm:max-w-md",
+              "bg-white dark:bg-gray-900 w-full sm:max-w-md",
               "rounded-t-3xl sm:rounded-2xl",
               "max-h-[92vh] sm:max-h-[90vh]",
-              "flex flex-col",
-              "shadow-xl",
+              "flex flex-col shadow-xl",
+              "border-0 sm:border border-gray-100 dark:border-gray-800",
+              "transition-colors duration-300",
               className
             )}
             onClick={e => e.stopPropagation()}
           >
-            {/* Header — sticky so title always visible while scrolling */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
-              {/* Drag handle — mobile only */}
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 w-10 h-1 bg-gray-200 rounded-full sm:hidden" />
-              <h2 className="text-base font-semibold text-gray-900 mt-2 sm:mt-0">{title}</h2>
+            {/* Drag handle — mobile only */}
+            <div className="sm:hidden absolute top-3 left-1/2 -translate-x-1/2 w-10 h-1 bg-gray-200 dark:bg-gray-700 rounded-full" />
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white mt-2 sm:mt-0">
+                {title}
+              </h2>
               <button
                 onClick={onClose}
-                className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors mt-2 sm:mt-0"
+                className="p-1.5 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mt-2 sm:mt-0"
               >
                 <X className="w-5 h-5" />
               </button>

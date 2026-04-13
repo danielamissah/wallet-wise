@@ -2,6 +2,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
+import ThemeProvider from "@/components/ThemeProvider";
 import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
 import InstallPrompt from "@/components/InstallPrompt";
 import "./globals.css";
@@ -17,15 +18,7 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "WalletWise",
   },
-  formatDetection: {
-    telephone: false,
-  },
-  openGraph: {
-    type: "website",
-    title: "WalletWise",
-    description: "Track your income, expenses, and savings goals — smartly.",
-    siteName: "WalletWise",
-  },
+  formatDetection: { telephone: false },
   icons: {
     shortcut: "/favicon.ico",
     apple: "/icon-180x180.png",
@@ -43,11 +36,13 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <ClerkProvider afterSignOutUrl="/">
-      <html lang="en">
-        <body className={inter.className}>
-          {children}
-          <ServiceWorkerRegistration />
-          <InstallPrompt />
+      <html lang="en" suppressHydrationWarning>
+        <body className={`${inter.className} bg-white dark:bg-gray-950 transition-colors duration-300`}>
+          <ThemeProvider>
+            {children}
+            <ServiceWorkerRegistration />
+            <InstallPrompt />
+          </ThemeProvider>
         </body>
       </html>
     </ClerkProvider>
