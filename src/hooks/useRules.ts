@@ -23,13 +23,17 @@ export interface RuleCalculation {
   freeCash: number;
   freeCashPct: number;
   breakdown: {
-    ruleId: string;
-    name: string;
-    category: string;
-    ruleType: string;
-    value: number;
+    id:        string;
+    ruleId?:   string;
+    name:      string;
+    category:  string;
+    type:      "rule" | "recurring"; 
+    ruleType?: string;
+    ruleBase?: string;
+    value:     number;
     allocated: number;
     percentage: number;
+    currency:  string;
   }[];
 }
 
