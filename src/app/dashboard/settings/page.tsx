@@ -7,7 +7,7 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Select from "@/components/ui/Select";
 import PageTransition from "@/components/ui/PageTransition";
-import { SUPPORTED_CURRENCIES } from "@/lib/currencies";
+import { COUNTRIES, getCurrencyForCountry, SUPPORTED_CURRENCIES } from "@/lib/currencies";
 import { useTheme } from "@/components/ThemeProvider";
 import { CheckCircle2, User, Palette, Info, Star, MessageSquare, Moon, Sun } from "lucide-react";
 
@@ -16,7 +16,8 @@ export default function SettingsPage() {
   const { theme, toggle } = useTheme();
   const [defaultCurrency, setDefaultCurrency] = useState("USD");
   const [saved,         setSaved]         = useState(false);
-  const [rating,        setRating]        = useState(5);
+  const [rating, setRating] = useState(5);
+  const [country, setCountry] = useState("");
   const [comment,       setComment]       = useState("");
   const [submitting,    setSubmitting]    = useState(false);
   const [reviewDone,    setReviewDone]    = useState(false);
@@ -93,25 +94,54 @@ export default function SettingsPage() {
         {/* Preferences */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
           <Card>
-            <div className="flex items-center gap-2 mb-4">
-              <Palette className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-              <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Preferences</h2>
-            </div>
-            <div className="space-y-4">
-              <Select
-                label="Default currency"
-                value={defaultCurrency}
-                onChange={e => setDefaultCurrency(e.target.value)}
-                options={SUPPORTED_CURRENCIES.map(c => ({ value: c.code, label: `${c.code} — ${c.name} (${c.symbol})` }))}
-              />
-              <p className="text-xs text-gray-400 dark:text-gray-500">
-                This sets the pre-selected currency when adding new transactions.
-              </p>
-              <Button onClick={handleSave}>
-                {saved ? <><CheckCircle2 className="w-4 h-4" /> Saved!</> : "Save preferences"}
-              </Button>
-            </div>
-          </Card>
+  <div className="flex items-center gap-2 mb-4">
+    <Palette className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+    <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Preferences</h2>
+  </div>
+  <div className="space-y-4">
+
+    {/* Country selector — auto-sets currency */}
+    <div className="flex flex-col gap-1.5">
+      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+        Country of residence
+      </label>
+      <select
+        value={country}
+        onChange={e => {
+          const selected = e.target.value;
+          setCountry(selected);
+          if (selected) {
+            const currency = getCurrencyForCountry(selected);
+            setDefaultCurrency(currency);
+          }
+        }}
+        className="w-full px-3 py-2 text-sm text-gray-900 dark:text-white border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+      >
+        <option value="">Select your country…</option>
+        {COUNTRIES.map(c => (
+          <option key={c} value={c}>{c}</option>
+        ))}
+      </select>
+      <p className="text-xs text-gray-400 dark:text-gray-500">
+        Selecting your country automatically sets your default currency.
+      </p>
+    </div>
+
+    <Select
+      label="Default currency"
+      value={defaultCurrency}
+      onChange={e => setDefaultCurrency(e.target.value)}
+      options={SUPPORTED_CURRENCIES.map(c => ({
+        value: c.code,
+        label: `${c.code} — ${c.name} (${c.symbol})`,
+      }))}
+    />
+
+    <Button onClick={handleSave}>
+      {saved ? <><CheckCircle2 className="w-4 h-4" /> Saved!</> : "Save preferences"}
+    </Button>
+  </div>
+</Card>
         </motion.div>
 
         {/* Appearance / dark mode */}
