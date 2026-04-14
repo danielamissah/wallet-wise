@@ -43,3 +43,6 @@ next-env.d.ts
 WalletWise_Case Study.docx
 wallet-wise-logo.af
 *.af
+wallet-wise-logo.af~lock~
+wallet-wise-logo.png
+wallet-wise-logo.svg
