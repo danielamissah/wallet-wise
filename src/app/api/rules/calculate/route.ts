@@ -9,11 +9,13 @@
 // Fixed rules deduct a set amount.
 // "Free cash" = what remains after all rules are applied.
 
+// src/app/api/rules/calculate/route.ts
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { budgetRules } from "@/lib/schema";
+import { budgetRules, recurringTransactions } from "@/lib/schema";
 import { eq, and } from "drizzle-orm";
+import { fetchExchangeRates, convertToUsd } from "@/lib/currencies";
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
@@ -22,9 +24,12 @@ export async function POST(req: NextRequest) {
   const { grossIncome, netIncome } = await req.json();
 
   if (!grossIncome || grossIncome <= 0) {
-    return NextResponse.json({ error: "grossIncome must be a positive number" }, { status: 400 });
+    return NextResponse.json({ error: "grossIncome must be positive" }, { status: 400 });
   }
 
+  const rates = await fetchExchangeRates();
+
+  // ── Budget rules (sorted by priority) ────────────────────────────────────
   const rules = await db
     .select()
     .from(budgetRules)
@@ -33,55 +38,88 @@ export async function POST(req: NextRequest) {
   rules.sort((a, b) => a.priority - b.priority);
 
   let remaining = grossIncome;
+
   const breakdown: {
-    ruleId:    string;
-    name:      string;
-    category:  string;
-    ruleType:  string;
-    ruleBase:  string;
-    value:     number;
-    allocated: number;
-    percentage: number; // percentage of gross income
+    id:         string;
+    name:       string;
+    category:   string;
+    type:       "rule" | "recurring";
+    ruleType?:  string;
+    ruleBase?:  string;
+    value:      number;
+    allocated:  number;
+    percentage: number;
+    currency:   string;
   }[] = [];
 
+  // Apply rules first
   for (const rule of rules) {
     const base = rule.ruleBase === "net_income"
       ? (netIncome ?? grossIncome)
-      : rule.ruleBase === "gross_income"
-        ? grossIncome
-        : grossIncome; // custom — use gross for now
+      : grossIncome;
 
-    let allocated = 0;
+    let allocated = rule.ruleType === "percentage"
+      ? (Number(rule.value) / 100) * base
+      : convertToUsd(Number(rule.value), rule.currency, rates);
 
-    if (rule.ruleType === "percentage") {
-      allocated = (Number(rule.value) / 100) * base;
-    } else {
-      // Fixed amount
-      allocated = Number(rule.value);
-    }
-
-    // Don't allocate more than what's remaining
     allocated = Math.min(allocated, remaining);
     remaining = Math.max(0, remaining - allocated);
 
     breakdown.push({
-      ruleId:    rule.id,
+      id:        rule.id,
       name:      rule.name,
       category:  rule.category,
+      type:      "rule",
       ruleType:  rule.ruleType,
       ruleBase:  rule.ruleBase,
       value:     Number(rule.value),
       allocated: Math.round(allocated * 100) / 100,
       percentage: Math.round((allocated / grossIncome) * 10000) / 100,
+      currency:  rule.currency,
+    });
+  }
+
+  // ── Recurring expenses ────────────────────────────────────────────────────
+  // Convert each to monthly USD equivalent
+  const recurringItems = await db
+    .select()
+    .from(recurringTransactions)
+    .where(and(
+      eq(recurringTransactions.userId, userId),
+      eq(recurringTransactions.active, true),
+      eq(recurringTransactions.type, "expense"),
+    ));
+
+  for (const item of recurringItems) {
+    const amountUsd = convertToUsd(Number(item.amount), item.currency, rates);
+
+    // Convert to monthly equivalent
+    const monthlyUsd =
+      item.frequency === "weekly"   ? amountUsd * 4.33 :
+      item.frequency === "biweekly" ? amountUsd * 2.17 :
+      amountUsd; // monthly
+
+    const allocated = Math.min(monthlyUsd, remaining);
+    remaining = Math.max(0, remaining - allocated);
+
+    breakdown.push({
+      id:        item.id,
+      name:      item.name,
+      category:  item.category,
+      type:      "recurring",
+      value:     Number(item.amount),
+      allocated: Math.round(allocated * 100) / 100,
+      percentage: Math.round((allocated / grossIncome) * 10000) / 100,
+      currency:  item.currency,
     });
   }
 
   return NextResponse.json({
     grossIncome,
-    netIncome:  netIncome ?? grossIncome,
+    netIncome:      netIncome ?? grossIncome,
     totalAllocated: Math.round((grossIncome - remaining) * 100) / 100,
-    freeCash:   Math.round(remaining * 100) / 100,
-    freeCashPct: Math.round((remaining / grossIncome) * 10000) / 100,
+    freeCash:       Math.round(remaining * 100) / 100,
+    freeCashPct:    Math.round((remaining / grossIncome) * 10000) / 100,
     breakdown,
   });
 }
