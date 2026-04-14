@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useRecurring } from "@/hooks/useRecurring";
 import type { RecurringTransaction } from "@/hooks/useRecurring";
+import { useCurrency } from "@/hooks/useCurrency";
 import { CATEGORIES, getCategoryColor, getCategoryIcon } from "@/lib/categories";
 import { SUPPORTED_CURRENCIES } from "@/lib/currencies";
 import { formatCurrency, getPreferredCurrency, cn } from "@/lib/utils";
@@ -25,11 +26,6 @@ interface RForm {
 
 interface FormErrors { name?: string; amount?: string; }
 
-const EMPTY: RForm = {
-  name: "", amount: "", type: "expense", category: "Housing",
-  currency: "USD", frequency: "monthly", dayOfPeriod: "1", notes: "",
-};
-
 const FREQ_LABELS: Record<string, string> = {
   monthly:  "Monthly",
   weekly:   "Weekly",
@@ -37,26 +33,65 @@ const FREQ_LABELS: Record<string, string> = {
 };
 
 const DAYS_OF_WEEK = [
-  { value: "0", label: "Sunday"   },
-  { value: "1", label: "Monday"   },
-  { value: "2", label: "Tuesday"  },
-  { value: "3", label: "Wednesday"},
-  { value: "4", label: "Thursday" },
-  { value: "5", label: "Friday"   },
-  { value: "6", label: "Saturday" },
+  { value: "0", label: "Sunday"    },
+  { value: "1", label: "Monday"    },
+  { value: "2", label: "Tuesday"   },
+  { value: "3", label: "Wednesday" },
+  { value: "4", label: "Thursday"  },
+  { value: "5", label: "Friday"    },
+  { value: "6", label: "Saturday"  },
 ];
+
+function emptyForm(preferred: string): RForm {
+  return {
+    name: "", amount: "", type: "expense", category: "Housing",
+    currency: preferred, frequency: "monthly", dayOfPeriod: "1", notes: "",
+  };
+}
 
 export default function RecurringPage() {
   const { items, loading, refetch } = useRecurring();
+  const { rates }                   = useCurrency();
+
+  const [displayCurrency, setDisplayCurrency] = useState("USD");
   const [modal,    setModal]    = useState<null | "add" | RecurringTransaction>(null);
-  const [form,     setForm]     = useState<RForm>(EMPTY);
+  const [form,     setForm]     = useState<RForm>(emptyForm("USD"));
   const [errors,   setErrors]   = useState<FormErrors>({});
   const [saving,   setSaving]   = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  // Read preferred currency and update live on storage change
+  useEffect(() => {
+    function update() { setDisplayCurrency(getPreferredCurrency()); }
+    update();
+    window.addEventListener("storage", update);
+    return () => window.removeEventListener("storage", update);
+  }, []);
+
+  // Convert any amount from its stored currency to display currency
+  function toDisplay(amount: number, fromCurrency: string): string {
+    if (!rates || Object.keys(rates).length === 0) {
+      return formatCurrency(amount, fromCurrency);
+    }
+    if (fromCurrency === displayCurrency) return formatCurrency(amount, displayCurrency);
+    const usd  = amount / (rates[fromCurrency] ?? 1);
+    const disp = usd * (rates[displayCurrency] ?? 1);
+    return formatCurrency(disp, displayCurrency);
+  }
+
+  // Convert to monthly display amount for summaries
+  function toMonthlyDisplay(item: RecurringTransaction): number {
+    const amount    = Number(item.amount);
+    const usd       = amount / (rates[item.currency] ?? 1);
+    const monthlyUsd =
+      item.frequency === "weekly"   ? usd * 4.33 :
+      item.frequency === "biweekly" ? usd * 2.17 :
+      usd;
+    return monthlyUsd * (rates[displayCurrency] ?? 1);
+  }
+
   function openAdd() {
-    const preferred = getPreferredCurrency();
-    setForm({ ...EMPTY, currency: preferred });
+    setForm(emptyForm(displayCurrency));
     setErrors({});
     setModal("add");
   }
@@ -83,7 +118,7 @@ export default function RecurringPage() {
 
   function validate(): boolean {
     const e: FormErrors = {};
-    if (!form.name.trim())                    e.name   = "Please enter a name.";
+    if (!form.name.trim())                        e.name   = "Please enter a name.";
     if (!form.amount || Number(form.amount) <= 0) e.amount = "Please enter a valid amount.";
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -116,9 +151,7 @@ export default function RecurringPage() {
       }
       await refetch();
       setModal(null);
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   async function handleToggleActive(item: RecurringTransaction) {
@@ -135,36 +168,24 @@ export default function RecurringPage() {
     try {
       await fetch(`/api/recurring/${id}`, { method: "DELETE" });
       refetch();
-    } finally {
-      setDeleting(null);
-    }
+    } finally { setDeleting(null); }
   }
 
-  const active   = items.filter(i => i.active);
+  const active   = items.filter(i =>  i.active);
   const paused   = items.filter(i => !i.active);
   const expenses = active.filter(i => i.type === "expense");
   const incomes  = active.filter(i => i.type === "income");
 
-  const monthlyExpenses = expenses.reduce((s, i) => {
-    const a = Number(i.amount);
-    if (i.frequency === "weekly")   return s + a * 4.33;
-    if (i.frequency === "biweekly") return s + a * 2.17;
-    return s + a;
-  }, 0);
-
-  const monthlyIncome = incomes.reduce((s, i) => {
-    const a = Number(i.amount);
-    if (i.frequency === "weekly")   return s + a * 4.33;
-    if (i.frequency === "biweekly") return s + a * 2.17;
-    return s + a;
-  }, 0);
+  // All summaries in display currency via proper conversion
+  const monthlyExpenses = expenses.reduce((s, i) => s + toMonthlyDisplay(i), 0);
+  const monthlyIncome   = incomes.reduce((s,  i) => s + toMonthlyDisplay(i), 0);
 
   // Items due in the next 7 days
   const upcoming = active.filter(i => {
     if (!i.nextDue) return false;
-    const due  = new Date(i.nextDue);
-    const now  = new Date();
-    const in7  = new Date();
+    const due = new Date(i.nextDue);
+    const now = new Date();
+    const in7 = new Date();
     in7.setDate(in7.getDate() + 7);
     return due >= now && due <= in7;
   }).sort((a, b) => new Date(a.nextDue!).getTime() - new Date(b.nextDue!).getTime());
@@ -188,19 +209,19 @@ export default function RecurringPage() {
           </Button>
         </div>
 
-        {/* Summary */}
+        {/* Summary — everything in display currency */}
         {items.length > 0 && (
           <div className="grid grid-cols-3 gap-3">
             <Card>
               <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">Monthly committed</p>
               <p className="text-xl font-bold text-red-500 dark:text-red-400">
-                -{formatCurrency(monthlyExpenses)}
+                -{formatCurrency(monthlyExpenses, displayCurrency)}
               </p>
             </Card>
             <Card>
               <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">Recurring income</p>
               <p className="text-xl font-bold text-green-600 dark:text-green-400">
-                +{formatCurrency(monthlyIncome)}
+                +{formatCurrency(monthlyIncome, displayCurrency)}
               </p>
             </Card>
             <Card>
@@ -210,7 +231,7 @@ export default function RecurringPage() {
           </div>
         )}
 
-        {/* Upcoming this week */}
+        {/* Upcoming */}
         {upcoming.length > 0 && (
           <Card>
             <div className="flex items-center gap-2 mb-3">
@@ -221,7 +242,8 @@ export default function RecurringPage() {
             </div>
             <div className="space-y-2">
               {upcoming.map(item => (
-                <div key={item.id} className="flex items-center justify-between px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-xl">
+                <div key={item.id}
+                  className="flex items-center justify-between px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-xl">
                   <div className="flex items-center gap-2.5">
                     <span className="text-lg">{getCategoryIcon(item.category)}</span>
                     <div>
@@ -231,9 +253,17 @@ export default function RecurringPage() {
                       </p>
                     </div>
                   </div>
-                  <span className={`text-sm font-semibold ${item.type === "income" ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}>
-                    {item.type === "income" ? "+" : "-"}{formatCurrency(Number(item.amount), item.currency)}
-                  </span>
+                  <div className="text-right">
+                    <p className={`text-sm font-semibold ${item.type === "income" ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}>
+                      {item.type === "income" ? "+" : "-"}{toDisplay(Number(item.amount), item.currency)}
+                    </p>
+                    {/* Show original if different */}
+                    {item.currency !== displayCurrency && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500">
+                        {formatCurrency(Number(item.amount), item.currency)}
+                      </p>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -286,10 +316,18 @@ export default function RecurringPage() {
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`text-sm font-semibold ${item.type === "income" ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}>
-                      {item.type === "income" ? "+" : "-"}{formatCurrency(Number(item.amount), item.currency)}
-                    </span>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="text-right">
+                      <p className={`text-sm font-semibold ${item.type === "income" ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}>
+                        {item.type === "income" ? "+" : "-"}{toDisplay(Number(item.amount), item.currency)}
+                      </p>
+                      {/* Show original currency if stored differently */}
+                      {item.currency !== displayCurrency && (
+                        <p className="text-xs text-gray-400 dark:text-gray-500">
+                          {formatCurrency(Number(item.amount), item.currency)}
+                        </p>
+                      )}
+                    </div>
                     <div className="flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                       <button onClick={() => openEdit(item)}
                         className="p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/40 text-gray-300 dark:text-gray-600 hover:text-blue-500 transition-colors">
@@ -314,7 +352,7 @@ export default function RecurringPage() {
           </section>
         )}
 
-        {/* Paused items */}
+        {/* Paused */}
         {paused.length > 0 && (
           <section>
             <h2 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-3">Paused</h2>
@@ -328,12 +366,14 @@ export default function RecurringPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{item.name}</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500">{FREQ_LABELS[item.frequency]} · Paused</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
+                      {FREQ_LABELS[item.frequency]} · Paused
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-gray-400 dark:text-gray-500">
-                      {formatCurrency(Number(item.amount), item.currency)}
-                    </span>
+                  <div className="flex items-center gap-3">
+                    <p className="text-sm font-semibold text-gray-400 dark:text-gray-500">
+                      {toDisplay(Number(item.amount), item.currency)}
+                    </p>
                     <button onClick={() => handleToggleActive(item)}
                       className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/30 text-gray-300 dark:text-gray-600 hover:text-green-500 transition-colors"
                       title="Resume">
