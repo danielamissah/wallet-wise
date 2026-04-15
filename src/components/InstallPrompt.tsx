@@ -1,153 +1,208 @@
 // src/components/InstallPrompt.tsx
-// Shows an install banner when the browser fires the beforeinstallprompt event.
-// This event only fires on Android Chrome and desktop Chrome/Edge.
-// iOS users see a separate message with manual instructions.
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Download, Share } from "lucide-react";
+import { X, Download, Smartphone } from "lucide-react";
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
+// Singleton so the prompt ref survives across renders
+let deferredPrompt: BeforeInstallPromptEvent | null = null;
+
+export function getInstallPrompt() {
+  return deferredPrompt;
+}
 
 export default function InstallPrompt() {
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [showBanner,     setShowBanner]     = useState(false);
-  const [isIos,          setIsIos]          = useState(false);
-  const [isInstalled,    setIsInstalled]    = useState(false);
+  const [showBanner, setShowBanner] = useState(false);
+  const [showIos,    setShowIos]    = useState(false);
+  const [installed,  setInstalled]  = useState(false);
+  const promptRef = useRef<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
-    // Check if already installed as PWA
+    // Already installed as PWA
     if (window.matchMedia("(display-mode: standalone)").matches) {
-      setIsInstalled(true);
+      setInstalled(true);
       return;
     }
 
-    // Check if dismissed before
-    const dismissed = localStorage.getItem("walletwise_install_dismissed");
-    if (dismissed) return;
+    // Detect iOS — needs manual instructions
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isInStandaloneMode = ("standalone" in navigator) &&
+      (navigator as Navigator & { standalone?: boolean }).standalone;
 
-    // Detect iOS
-    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) && !(window as any).MSStream;
-    setIsIos(ios);
-
-    if (ios) {
-      // Show iOS instructions after a short delay
-      setTimeout(() => setShowBanner(true), 3000);
+    if (isIos && !isInStandaloneMode) {
+      const dismissed = localStorage.getItem("ww_ios_prompt_dismissed");
+      if (!dismissed) setShowIos(true);
       return;
     }
 
-    // Listen for Chrome/Android install prompt
-    const handler = (e: Event) => {
+    // Chrome / Android — listen for beforeinstallprompt
+    function handlePrompt(e: Event) {
       e.preventDefault();
-      setDeferredPrompt(e);
-      setTimeout(() => setShowBanner(true), 3000);
-    };
+      deferredPrompt = e as BeforeInstallPromptEvent;
+      promptRef.current = deferredPrompt;
 
-    window.addEventListener("beforeinstallprompt", handler);
-    return () => window.removeEventListener("beforeinstallprompt", handler);
+      const dismissed = localStorage.getItem("ww_install_dismissed");
+      const dismissedAt = dismissed ? Number(dismissed) : 0;
+      const hoursSince = (Date.now() - dismissedAt) / 1000 / 60 / 60;
+
+      // Show if never dismissed, or dismissed more than 48hrs ago
+      if (!dismissed || hoursSince > 48) {
+        setShowBanner(true);
+      }
+    }
+
+    window.addEventListener("beforeinstallprompt", handlePrompt);
+
+    // If we already captured the prompt before this component mounted
+    if (deferredPrompt) {
+      const dismissed = localStorage.getItem("ww_install_dismissed");
+      const dismissedAt = dismissed ? Number(dismissed) : 0;
+      const hoursSince = (Date.now() - dismissedAt) / 1000 / 60 / 60;
+      if (!dismissed || hoursSince > 48) {
+        promptRef.current = deferredPrompt;
+        setShowBanner(true);
+      }
+    }
+
+    window.addEventListener("appinstalled", () => {
+      setInstalled(true);
+      setShowBanner(false);
+      deferredPrompt = null;
+      localStorage.removeItem("ww_install_dismissed");
+    });
+
+    return () => window.removeEventListener("beforeinstallprompt", handlePrompt);
   }, []);
 
-  function dismiss() {
-    setShowBanner(false);
-    localStorage.setItem("walletwise_install_dismissed", "true");
-  }
-
   async function handleInstall() {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
+    const prompt = promptRef.current ?? deferredPrompt;
+    if (!prompt) return;
+    await prompt.prompt();
+    const { outcome } = await prompt.userChoice;
     if (outcome === "accepted") {
-      setIsInstalled(true);
+      setInstalled(true);
+      setShowBanner(false);
+      deferredPrompt = null;
+    } else {
+      // Store dismissal time — re-show after 48hrs
+      localStorage.setItem("ww_install_dismissed", String(Date.now()));
+      setShowBanner(false);
     }
-    setShowBanner(false);
-    setDeferredPrompt(null);
   }
 
-  if (isInstalled) return null;
+  function dismissBanner() {
+    localStorage.setItem("ww_install_dismissed", String(Date.now()));
+    setShowBanner(false);
+  }
+
+  function dismissIos() {
+    localStorage.setItem("ww_ios_prompt_dismissed", "1");
+    setShowIos(false);
+  }
+
+  if (installed) return null;
 
   return (
-    <AnimatePresence>
-      {showBanner && (
-        <motion.div
-          initial={{ opacity: 0, y: 80 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 80 }}
-          transition={{ type: "spring", bounce: 0.3, duration: 0.5 }}
-          className="fixed bottom-20 md:bottom-6 left-4 right-4 md:left-auto md:right-6 md:w-80 z-50"
-        >
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-2xl shadow-gray-200/60 p-4">
-            <div className="flex items-start justify-between gap-3 mb-3">
-              <div className="flex items-center gap-3">
+    <>
+      {/* Android / Chrome install banner */}
+      <AnimatePresence>
+        {showBanner && (
+          <motion.div
+            initial={{ opacity: 0, y: 80 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 80 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="fixed bottom-20 md:bottom-6 left-4 right-4 md:left-auto md:right-6 md:w-80 z-50"
+          >
+            <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl shadow-black/20 p-4">
+              <div className="flex items-start gap-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-violet-600 rounded-xl flex items-center justify-center shrink-0">
-                  <span className="text-white text-lg">💼</span>
+                  <Smartphone className="w-5 h-5 text-white" />
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
                     Install WalletWise
                   </p>
-                  <p className="text-xs text-gray-400">
-                    Add to your home screen
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Add to your home screen for quick access — works offline too.
                   </p>
-                </div>
-              </div>
-              <button
-                onClick={dismiss}
-                className="p-1 rounded-lg hover:bg-gray-100 text-gray-400 shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {isIos ? (
-              // iOS manual install instructions
-              <div className="space-y-2">
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  To install on iPhone or iPad:
-                </p>
-                <div className="flex items-center gap-2 text-xs text-gray-600">
-                  <span className="w-5 h-5 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center shrink-0 font-semibold text-[10px]">1</span>
-                  <span>Tap the <Share className="w-3 h-3 inline" /> Share button in Safari</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-gray-600">
-                  <span className="w-5 h-5 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center shrink-0 font-semibold text-[10px]">2</span>
-                  <span>Tap <strong>Add to Home Screen</strong></span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-gray-600">
-                  <span className="w-5 h-5 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center shrink-0 font-semibold text-[10px]">3</span>
-                  <span>Tap <strong>Add</strong> to confirm</span>
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={handleInstall}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Install
+                    </button>
+                    <button
+                      onClick={dismissBanner}
+                      className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                    >
+                      Not now
+                    </button>
+                  </div>
                 </div>
                 <button
-                  onClick={dismiss}
-                  className="w-full mt-2 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors"
+                  onClick={dismissBanner}
+                  className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 transition-colors shrink-0"
                 >
-                  Maybe later
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-            ) : (
-              // Android / desktop install button
-              <div className="space-y-2">
-                <p className="text-xs text-gray-500">
-                  Install for quick access, offline support, and a native app feel.
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={dismiss}
-                    className="flex-1 py-2 text-xs font-medium text-gray-500 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
-                  >
-                    Not now
-                  </button>
-                  <button
-                    onClick={handleInstall}
-                    className="flex-1 py-2 text-xs font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    Install
-                  </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* iOS Safari instructions */}
+      <AnimatePresence>
+        {showIos && (
+          <motion.div
+            initial={{ opacity: 0, y: 80 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 80 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="fixed bottom-20 left-4 right-4 z-50"
+          >
+            <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl shadow-black/20 p-4">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-violet-600 rounded-xl flex items-center justify-center">
+                    <Smartphone className="w-4 h-4 text-white" />
+                  </div>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    Install on iPhone
+                  </p>
                 </div>
+                <button onClick={dismissIos}
+                  className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-            )}
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+              <div className="space-y-2">
+                {[
+                  { step: "1", text: "Tap the Share button in Safari" },
+                  { step: "2", text: 'Scroll down and tap "Add to Home Screen"' },
+                  { step: "3", text: 'Tap "Add" to install WalletWise' },
+                ].map(s => (
+                  <div key={s.step} className="flex items-center gap-2.5">
+                    <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
+                      <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">{s.step}</span>
+                    </div>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">{s.text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

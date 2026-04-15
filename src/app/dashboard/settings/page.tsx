@@ -11,6 +11,7 @@ import { COUNTRIES, getCurrencyForCountry, SUPPORTED_CURRENCIES } from "@/lib/cu
 import { useTheme } from "@/components/ThemeProvider";
 import { CheckCircle2, User, Palette, Info, Star, MessageSquare, Moon, Sun } from "lucide-react";
 
+
 export default function SettingsPage() {
   const { user } = useUser();
   const { theme, toggle } = useTheme();

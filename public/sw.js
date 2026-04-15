@@ -1,82 +1,58 @@
 // public/sw.js
-// Service worker for WalletWise PWA
-// Handles caching for offline support
+const CACHE_NAME = "walletwise-v2";
+const OFFLINE_URL = "/dashboard";
 
-const CACHE_NAME = "walletwise-v1";
+// Never cache API routes
+const NO_CACHE = ["/api/", "/_next/", "/clerk/"];
 
-// Files to cache immediately on install
-const STATIC_ASSETS = [
-  "/",
-  "/dashboard",
-  "/manifest.json",
-  "/icon-192x192.png",
-  "/icon-512x512.png",
-];
-
-// Install — cache static assets
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    })
-  );
+  // Take over immediately without waiting
   self.skipWaiting();
-});
-
-// Activate — clean up old caches
-self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
-      )
+    caches.open(CACHE_NAME).then((cache) =>
+      cache.addAll(["/", "/dashboard", "/manifest.json"])
     )
   );
-  self.clients.claim();
 });
 
-// Fetch — network first, fall back to cache
-// API calls always go to network (never serve stale financial data)
+self.addEventListener("activate", (event) => {
+  // Delete all old caches
+  event.waitUntil(
+    Promise.all([
+      self.clients.claim(),
+      caches.keys().then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) => key !== CACHE_NAME)
+            .map((key) => caches.delete(key))
+        )
+      ),
+    ])
+  );
+});
+
 self.addEventListener("fetch", (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
+  // Skip non-GET and API/auth routes
+  if (event.request.method !== "GET") return;
+  if (NO_CACHE.some((p) => event.request.url.includes(p))) return;
 
-  // Always fetch API routes from network — never cache financial data
-  if (url.pathname.startsWith("/api/")) {
-    event.respondWith(
-      fetch(request).catch(() => {
-        return new Response(
-          JSON.stringify({ error: "You are offline. Please check your connection." }),
-          { status: 503, headers: { "Content-Type": "application/json" } }
-        );
-      })
-    );
-    return;
-  }
-
-  // For everything else — try network first, fall back to cache
   event.respondWith(
-    fetch(request)
+    fetch(event.request)
       .then((response) => {
-        // Cache successful GET responses
-        if (request.method === "GET" && response.status === 200) {
+        // Cache successful responses
+        if (response && response.status === 200) {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          caches.open(CACHE_NAME).then((cache) =>
+            cache.put(event.request, clone)
+          );
         }
         return response;
       })
-      .catch(() => {
-        // Network failed — try cache
-        return caches.match(request).then((cached) => {
-          if (cached) return cached;
-          // If nothing in cache either, return offline page
-          if (request.destination === "document") {
-            return caches.match("/");
-          }
-          return new Response("Offline", { status: 503 });
-        });
-      })
+      .catch(() =>
+        // Offline fallback
+        caches.match(event.request).then(
+          (cached) => cached || caches.match(OFFLINE_URL)
+        )
+      )
   );
 });
